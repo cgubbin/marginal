@@ -1,3 +1,6 @@
+mod distribution;
+mod normal;
+
 use std::ops::Range;
 
 use ndarray::{Array2, Array1, ArrayView1, s};
