@@ -1,4 +1,6 @@
+use itertools::Itertools;
 use num_traits::{Float, FromPrimitive};
+
 use crate::distribution::{Distribution, Covariance};
 
 struct Normal<T> {
@@ -64,10 +66,82 @@ impl<T: Float + FromPrimitive + std::fmt::Display> Covariance<T> for Normal<T> {
     }
 }
 
+struct WeightedNormal<T> {
+    distribution: Normal<T>,
+    weight: T,
+}
+
+struct Mixture<T> {
+    /// A distribution is a sum of weighted normals
+    ///
+    /// The constructer needs to ensure that the sum of weights is unity.
+    distributions: Vec<WeightedNormal<T>>,
+}
+
+impl <T: Float + Clone + Copy + FromPrimitive> Mixture<T> {
+    pub(crate) fn from_distributions_and_weights(distributions: Vec<Normal<T>>, weights: Vec<T>) -> Result<Self, String> {
+        if distributions.len() != weights.len() {
+            return Err("all distributions must be associated with a weight".into()) ;
+        }
+        // Normalize the weights
+        let normalization = weights.iter().map(|weight| *weight).fold(T::zero(), |a, b| a + b);
+
+        Ok(Self {
+            distributions: distributions.into_iter().zip(weights.into_iter())
+                .map(|(distribution, unnormalized_weight)| WeightedNormal {
+                    distribution, weight: unnormalized_weight / normalization
+                })
+                .collect()
+        })
+    }
+}
+
+
+impl<T: Float + FromPrimitive + std::fmt::Display> Distribution<T> for Mixture<T> {
+    /// The expectation value of a Mixture distribution is the weighted sum of the expectation
+    /// values of it's constituents
+    fn expectation_value(&self) -> T {
+        self.distributions.iter()
+            .map(|weighted_distribution| weighted_distribution.weight * weighted_distribution.distribution.expectation_value())
+            .fold(T::zero(), |a, b| a + b)
+    }
+
+    /// The variance is always the difference between the expectation value of the square of the
+    /// distribution and the square of the expectation value of the distribution
+    ///
+    /// Var[Z] = E[Z^2] - E[Z]^2
+    fn variance(&self) -> T {
+        // To get the squared distribution we need to multiply all elements of the distribution
+        // vector by all elements of the distribution vector and sum.
+        let expectation_value_of_square = self.distributions.iter()
+            .cartesian_product(self.distributions.iter())
+            .map(|(first, second)| {
+                if first.distribution.mean != second.distribution.mean {
+                    panic!("only implemented for distributions with constant mean");
+                }
+                let product_weight = first.weight * second.weight;
+                let product_distribution = Normal {
+                    mean: first.distribution.mean,
+                    standard_deviation: first.distribution.standard_deviation,
+                    power: first.distribution.power + second.distribution.power,
+                };
+                product_weight * product_distribution.expectation_value()
+            })
+            .fold(T::zero(), |a, b| a + b);
+
+        let square_of_expectation_value = self.distributions.iter()
+            .map(|WeightedNormal { distribution, weight }| *weight * distribution.variance())
+            .fold(T::zero(), |a, b| a + b)
+            .powi(2);
+
+        expectation_value_of_square - square_of_expectation_value
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::distribution::{Covariance, Distribution};
-    use super::Normal;
+    use super::{Normal, Mixture};
     use rand::prelude::*;
     use proptest::prelude::*;
 
@@ -163,5 +237,48 @@ mod tests {
             let other_distribution = Normal { mean, standard_deviation, power };
             approx::assert_relative_eq!(normal.off_diagonal_covariance(&other_distribution), expected);
         }
+    }
+
+    #[test]
+    fn mixture_of_equal_distributions_retains_properties() {
+        let n = 10;
+        let mut rng = rand::thread_rng();
+        let mean: f64 = rng.gen();
+        let standard_deviation: f64 = rng.gen();
+        let weights: Vec<f64> = (0..n).map(|_| rng.gen()).collect();
+
+        let distributions = (0..n)
+            .map(|_| Normal { mean, standard_deviation, power: 1 })
+            .collect();
+
+        let mixture: Mixture<f64> = Mixture::from_distributions_and_weights(distributions, weights.clone()).unwrap();
+
+        approx::assert_relative_eq!(
+            mixture.expectation_value(),
+            mean,
+        )
+    }
+
+    #[test]
+    fn mixture_of_normals_has_correct_expectation_value() {
+        let n = 10;
+        let mut rng = rand::thread_rng();
+        let means: Vec<f64> = (0..n).map(|_| rng.gen()).collect();
+        let standard_deviations: Vec<f64> = (0..n).map(|_| rng.gen()).collect();
+        let weights: Vec<f64> = (0..n).map(|_| rng.gen()).collect();
+        let total_weight: f64 = weights.iter().sum();
+
+        let distributions = means.iter().zip(standard_deviations.iter())
+            .map(|(&mean, &standard_deviation)| Normal { mean, standard_deviation, power: 1 })
+            .collect();
+
+        let mixture: Mixture<f64> = Mixture::from_distributions_and_weights(distributions, weights.clone()).unwrap();
+
+        approx::assert_relative_eq!(
+            mixture.expectation_value(),
+            means.into_iter().zip(weights.into_iter())
+                .map(|(mean, weight)| mean * weight / total_weight)
+                .sum()
+        )
     }
 }
