@@ -1,5 +1,5 @@
 pub(crate) mod app;
-pub(crate) mod args;
+pub mod args;
 mod calibration;
 mod cli;
 pub(crate) mod config;
@@ -8,6 +8,5 @@ mod mocks;
 pub(crate) mod normal;
 mod polyfit;
 
-pub use args::Args;
+pub type Result<T> = ::std::result::Result<T, Box<dyn ::std::error::Error>>;
 
-pub(crate) type Result<T> = ::std::result::Result<T, Box<dyn ::std::error::Error>>;

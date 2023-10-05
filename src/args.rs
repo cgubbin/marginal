@@ -1,6 +1,7 @@
 use std::env;
 use std::ffi::OsString;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 
@@ -9,13 +10,15 @@ use crate::config;
 use crate::Result;
 
 
-pub struct Args (Arc<ArgInner>);
+pub struct Args (Arc<ArgsInner>);
 
-pub struct ArgInner {
+pub struct ArgsInner {
     /// The command we want to execute
     command: Command,
     /// The number of threads to use
     threads: usize,
+    /// Working directories provided at the command line
+    paths: Vec<PathBuf>,
 }
 
 pub enum Command {
@@ -36,6 +39,13 @@ impl Args {
 
     pub fn command(&self) -> &Command {
         &self.0.command
+    }
+
+    /// Return the paths found in the command line arguments. This is
+    /// guaranteed to be non-empty. In the case where no explicit arguments are
+    /// provided, a single default path is provided automatically.
+    fn paths(&self) -> &[PathBuf] {
+        &self.0.paths
     }
 }
 

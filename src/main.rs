@@ -1,5 +1,4 @@
-use marginal::Args;
-mod args;
+use marginal::args::Args;
 
 fn main() {
     if let Err(err) = Args::parse().and_then(try_main) {
@@ -9,7 +8,7 @@ fn main() {
 }
 
 fn try_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    use args::Command::*;
+    use marginal::args::Command::*;
 
     todo!()
     // let matched = match args.command() {
