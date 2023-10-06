@@ -4,6 +4,7 @@ pub mod calibration;
 mod cli;
 pub mod config;
 pub(crate) mod distribution;
+mod estimate;
 mod mocks;
 pub(crate) mod normal;
 mod polyfit;

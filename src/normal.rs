@@ -1,9 +1,11 @@
 use itertools::Itertools;
+use ndarray::Array1;
 use num_traits::{Float, FromPrimitive};
 
 use crate::distribution::{Covariance, Distribution};
 
-struct Normal<T> {
+#[derive(Debug)]
+struct Normal<T: std::fmt::Debug> {
     /// Central frequency
     mean: T,
     /// Standard deviation
@@ -12,7 +14,7 @@ struct Normal<T> {
     power: usize,
 }
 
-impl<T: Float + FromPrimitive + std::fmt::Display> Distribution<T> for Normal<T> {
+impl<T: Float + FromPrimitive + std::fmt::Display + std::fmt::Debug> Distribution<T> for Normal<T> {
     /// Calculates the expectation value of the normal distribution raised to `power`
     ///
     /// The expectation value of the `n`th power of a normal distribution is given by
@@ -65,7 +67,7 @@ impl<T: Float + FromPrimitive + std::fmt::Display> Distribution<T> for Normal<T>
     }
 }
 
-impl<T: Float + FromPrimitive + std::fmt::Display> Covariance<T> for Normal<T> {
+impl<T: Float + FromPrimitive + std::fmt::Display + std::fmt::Debug> Covariance<T> for Normal<T> {
     fn off_diagonal_covariance(&self, other: &Self) -> T {
         if (self.mean == other.mean) && (self.standard_deviation == other.standard_deviation) {
             Self {
@@ -81,19 +83,19 @@ impl<T: Float + FromPrimitive + std::fmt::Display> Covariance<T> for Normal<T> {
     }
 }
 
-struct WeightedNormal<T> {
+struct WeightedNormal<T: std::fmt::Debug> {
     distribution: Normal<T>,
     weight: T,
 }
 
-struct Mixture<T> {
+struct Mixture<T: std::fmt::Debug> {
     /// A distribution is a sum of weighted normals
     ///
     /// The constructer needs to ensure that the sum of weights is unity.
     distributions: Vec<WeightedNormal<T>>,
 }
 
-impl<T: Float + Clone + Copy + FromPrimitive> Mixture<T> {
+impl<T: Float + Clone + Copy + FromPrimitive + std::fmt::Debug> Mixture<T> {
     pub(crate) fn from_distributions_and_weights(
         distributions: Vec<Normal<T>>,
         weights: Vec<T>,
@@ -120,7 +122,7 @@ impl<T: Float + Clone + Copy + FromPrimitive> Mixture<T> {
     }
 }
 
-impl<T: Float + FromPrimitive + std::fmt::Display> Distribution<T> for Mixture<T> {
+impl<T: Float + FromPrimitive + std::fmt::Display + std::fmt::Debug> Distribution<T> for Mixture<T> {
     /// The expectation value of a Mixture distribution is the weighted sum of the expectation
     /// values of it's constituents
     fn expectation_value(&self) -> T {
@@ -171,6 +173,22 @@ impl<T: Float + FromPrimitive + std::fmt::Display> Distribution<T> for Mixture<T
             .powi(2);
 
         expectation_value_of_square - square_of_expectation_value
+    }
+}
+
+impl<T: Float + FromPrimitive + std::fmt::Display + std::fmt::Debug> Mixture<T> {
+    fn sigma_xy(&self) -> Array1<T> {
+        let mut sigma_xy = Array1::zeros(self.distributions.len());
+
+        for (ii, a) in self.distributions.iter().enumerate() {
+            let covariance = self.distributions.iter()
+                .map(|b| a.distribution.off_diagonal_covariance(&b.distribution) * b.weight)
+                .fold(T::zero(), |a, b| a + b);
+            sigma_xy[ii] = covariance;
+        }
+
+
+        sigma_xy
     }
 }
 

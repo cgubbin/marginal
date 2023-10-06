@@ -268,7 +268,7 @@ where
     }
 }
 
-struct Measurement<E: Scalar> {
+pub(crate) struct Measurement<E: Scalar> {
     raw_signal: E,
     raw_reference: E,
     emergent_signal: E,
