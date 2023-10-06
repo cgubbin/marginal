@@ -20,6 +20,12 @@ pub struct PolyfitResult<E: Scalar> {
     residual_sum_of_squares: Option<Array<E::Real, Ix0>>,
 }
 
+impl<E: Scalar> PolyfitResult<E> {
+    pub fn solution(&self) -> &Array1<E> {
+        &self.solution
+    }
+}
+
 pub fn polyfit<T: Scalar + Lapack + ScalarOperand + MulAssign + Copy>(
     x: &[T],
     y: &[T],

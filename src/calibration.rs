@@ -8,15 +8,12 @@ use ndarray_linalg::{Scalar, Lapack};
 use num_traits::real::Real;
 use serde::{Deserialize, de::DeserializeOwned, Serialize};
 
+use crate::config::Config;
 use crate::Result;
 use crate::polyfit::{PolyfitResult, polyfit};
 
-struct Config<E> {
-    polynomial_fit_degree: usize,
-    operating_frequency: E,
-}
 
-fn build<E: Lapack + Scalar + ScalarOperand + Real>(working_directory: PathBuf, config: Config<E>) -> Result<Vec<Sensor<E>>> {
+pub fn build<E: Lapack + Scalar + ScalarOperand + Real>(working_directory: PathBuf, config: Config<E>) -> Result<Vec<Sensor<E>>> {
 
     let mut sensors = vec![];
     for subdir in fs::read_dir(working_directory.join("calibration"))? {
@@ -38,8 +35,8 @@ fn build<E: Lapack + Scalar + ScalarOperand + Real>(working_directory: PathBuf, 
 }
 
 #[derive(Deserialize, Serialize)]
-struct SensorData<E> {
-    noise_equivalent_power: E,
+pub struct SensorData<E> {
+    pub noise_equivalent_power: E,
 }
 
 fn process<E: Scalar>(path: PathBuf, config: &Config<E>) -> Result<SensorBuilder<E, Set>> {
@@ -91,83 +88,13 @@ fn process<E: Scalar>(path: PathBuf, config: &Config<E>) -> Result<SensorBuilder
     Ok(builder)
 }
 
-#[cfg(test)]
-mod tests {
-    use ndarray_rand::rand::{Rng, SeedableRng};
-    use rand_isaac::Isaac64Rng;
-    use tempdir::TempDir;
-
-    use crate::calibration::SensorData;
-
-    use super::Config;
-
-
-    #[test]
-    fn test_traversal() {
-        // Arrange
-        let tmp_dir = TempDir::new("test_traversal").unwrap();
-        let working_dir = tmp_dir.path();
-        let calibration_dir = working_dir.join("calibration");
-        std::fs::create_dir(&calibration_dir).unwrap();
-
-        let gases = ["H2O", "CO2"];
-        let seed = 40;
-        let mut rng = Isaac64Rng::seed_from_u64(seed);
-
-        for gas in gases {
-            let gas_dir = calibration_dir.join(gas);
-            std::fs::create_dir(&gas_dir).unwrap();
-            let sensor_data = SensorData { noise_equivalent_power: rng.gen::<f64>() };
-            std::fs::write(gas_dir.join("sensor.toml"), toml::to_string(&sensor_data).unwrap())
-                .unwrap();
-        }
-
-        let polynomial_degree = 4;
-
-        let coeffs = (0..=polynomial_degree)
-            .map(|_| rng.gen::<f64>())
-            .collect::<Vec<_>>();
-
-        // We consider emergent intensities to be 1.0, reference to be 1.0, and only change the
-        // recorded intensity. our signal i
-        let num_points = 255;
-        let concentrations = (0..num_points)
-            .map(|n| n as f64 / num_points as f64)
-            .collect::<Vec<_>>();
-        let values = concentrations.iter()
-            .map(|x| coeffs.iter().enumerate().map(|(ii, c)| c * x.powi(ii as i32)).fold(0., |a, b| a + b))
-            .map(|x| 10f64.powf(x))
-            .collect::<Vec<_>>();
-
-
-        #[derive(serde::Serialize)]
-        struct Row(f64, f64, f64, f64, f64);
-
-        for target in gases {
-            for gas in gases {
-                let mut wtr = csv::Writer::from_path(calibration_dir.join(target).join(format!("{gas}.csv"))).unwrap();
-                for (c, v) in concentrations.iter().zip(values.iter()) {
-                    let row = Row(*c, *v, 1.0, 1.0, 1.0);
-                    wtr.serialize(&row).unwrap();
-                }
-            }
-        }
-
-
-        let config = Config {
-            polynomial_fit_degree: 4,
-            operating_frequency: 10.0,
-        };
-        let res = super::build::<f64>(working_dir.to_path_buf(), config).unwrap();
-    }
-}
 
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-struct Gas(String);
+pub struct Gas(pub String);
 
 #[derive(Debug)]
-struct Sensor<E: Scalar + std::fmt::Debug> {
+pub struct Sensor<E: Scalar + std::fmt::Debug> {
     /// The molecule the sensor is designed to detect
     target: Gas,
     /// Frequency of operation
@@ -178,6 +105,20 @@ struct Sensor<E: Scalar + std::fmt::Debug> {
     calibration: PolyfitResult<E>,
     /// Crosstalk curves, may or may not be provided
     crosstalk: HashMap<Gas, PolyfitResult<E>>,
+}
+
+impl<E: Scalar + std::fmt::Debug> Sensor<E> {
+    pub fn calibration(&self) -> &PolyfitResult<E> {
+        &self.calibration
+    }
+
+    pub fn target(&self) -> &Gas {
+        &self.target
+    }
+
+    pub fn crosstalk(&self) -> &HashMap<Gas, PolyfitResult<E>> {
+        &self.crosstalk
+    }
 }
 
 enum Set {}
