@@ -4,17 +4,18 @@ use std::path::PathBuf;
 use std::{collections::HashMap, marker::PhantomData};
 
 use ndarray::ScalarOperand;
-use ndarray_linalg::{Scalar, Lapack};
+use ndarray_linalg::{Lapack, Scalar};
 use num_traits::real::Real;
-use serde::{Deserialize, de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::config::Config;
+use crate::polyfit::{polyfit, PolyfitResult};
 use crate::Result;
-use crate::polyfit::{PolyfitResult, polyfit};
 
-
-pub fn build<E: Lapack + Scalar + ScalarOperand + Real>(working_directory: PathBuf, config: Config<E>) -> Result<Vec<Sensor<E>>> {
-
+pub fn build<E: Lapack + Scalar + ScalarOperand + Real>(
+    working_directory: PathBuf,
+    config: Config<E>,
+) -> Result<Vec<Sensor<E>>> {
     let mut sensors = vec![];
     for subdir in fs::read_dir(working_directory.join("calibration"))? {
         println!("working in {subdir:?}");
@@ -29,7 +30,6 @@ pub fn build<E: Lapack + Scalar + ScalarOperand + Real>(working_directory: PathB
         .into_iter()
         .map(|builder| builder.build())
         .collect::<Result<Vec<Sensor<E>>>>()?;
-
 
     Ok(sensors)
 }
@@ -63,10 +63,10 @@ fn process<E: Scalar>(path: PathBuf, config: &Config<E>) -> Result<SensorBuilder
             }
         })
         .filter(|path| {
-            path.file_stem().and_then(OsStr::to_str).map_or(false, |stem| stem != &target.0)
+            path.file_stem()
+                .and_then(OsStr::to_str)
+                .map_or(false, |stem| stem != &target.0)
         });
-
-
 
     let mut builder: SensorBuilder<E, Unset> = SensorBuilder::new(
         target.clone(),
@@ -87,8 +87,6 @@ fn process<E: Scalar>(path: PathBuf, config: &Config<E>) -> Result<SensorBuilder
 
     Ok(builder)
 }
-
-
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Gas(pub String);
@@ -134,14 +132,19 @@ struct SensorBuilder<E: Scalar, N> {
 }
 
 impl<E: Scalar, N> SensorBuilder<E, N> {
-    fn new(target: Gas, noise_equivalent_power: E, operation_frequency: E, polynomial_degree: usize) -> Self {
+    fn new(
+        target: Gas,
+        noise_equivalent_power: E,
+        operation_frequency: E,
+        polynomial_degree: usize,
+    ) -> Self {
         Self {
             target,
             noise_equivalent_power,
             operation_frequency,
             polynomial_degree,
             raw_calibration_data: vec![],
-            phantom_data: PhantomData
+            phantom_data: PhantomData,
         }
     }
 
@@ -160,7 +163,7 @@ impl<E: Scalar> SensorBuilder<E, Unset> {
             operation_frequency: self.operation_frequency,
             polynomial_degree: self.polynomial_degree,
             raw_calibration_data: self.raw_calibration_data,
-            phantom_data: PhantomData
+            phantom_data: PhantomData,
         }
     }
 }
@@ -170,7 +173,12 @@ impl<E: Lapack + Real + Scalar + ScalarOperand> SensorBuilder<E, Set> {
         let mut crosstalk = HashMap::new();
         let mut calibration = None;
         for calibration_data in self.raw_calibration_data {
-            let fit = generate_fit(&calibration_data, self.noise_equivalent_power, self.operation_frequency, self.polynomial_degree)?;
+            let fit = generate_fit(
+                &calibration_data,
+                self.noise_equivalent_power,
+                self.operation_frequency,
+                self.polynomial_degree,
+            )?;
 
             if calibration_data.gas == self.target {
                 calibration = Some(fit);
@@ -193,7 +201,7 @@ fn generate_fit<E: Lapack + Real + Scalar + ScalarOperand>(
     calibration_data: &CalibrationData<E>,
     noise_equivalent_power: E,
     operating_frequency: E,
-    degree: usize
+    degree: usize,
 ) -> Result<PolyfitResult<E>> {
     let data = calibration_data.generate_fitting_data(noise_equivalent_power, operating_frequency);
     let fit = polyfit(
@@ -201,18 +209,16 @@ fn generate_fit<E: Lapack + Real + Scalar + ScalarOperand>(
         &data.y,
         degree,
         Some(&data.w),
-        crate::polyfit::Scaling::Unscaled
+        crate::polyfit::Scaling::Unscaled,
     )?;
     Ok(fit)
 }
-
 
 struct CalibrationData<E: Scalar> {
     gas: Gas,
     concentration: Vec<E>,
     raw_measurements: Vec<Measurement<E>>,
 }
-
 
 impl<E: Scalar + Copy> CalibrationData<E>
 where
@@ -224,7 +230,8 @@ where
             return Err("requested file not found".into());
         }
 
-        let gas = filepath.file_stem()
+        let gas = filepath
+            .file_stem()
             .expect("filestem missing")
             .to_str()
             .expect("failed to convert stem to string")
@@ -254,7 +261,9 @@ where
         }
 
         Ok(Self {
-            gas: Gas(gas), concentration, raw_measurements
+            gas: Gas(gas),
+            concentration,
+            raw_measurements,
         })
     }
 }
@@ -268,21 +277,20 @@ struct Measurement<E: Scalar> {
 
 impl<E: Real + Scalar> Measurement<E> {
     fn scaled(&self) -> E {
-        (self.raw_signal / self.emergent_signal
-            * self.emergent_reference / self.emergent_signal).log10()
+        (self.raw_signal / self.emergent_signal * self.emergent_reference / self.emergent_signal)
+            .log10()
     }
 
     // The weights are the inverse of the variance of the measurement
     fn weight(&self, noise_equivalent_power: E, operation_frequency: E) -> E {
-        let standard_deviation = noise_equivalent_power * Scalar::sqrt(operation_frequency)
+        let standard_deviation = noise_equivalent_power
+            * Scalar::sqrt(operation_frequency)
             * (self.raw_reference + self.raw_reference)
             / Scalar::powi(self.raw_signal, 2);
 
         E::one() / Scalar::powi(standard_deviation, 2)
-
     }
 }
-
 
 struct PolyFitInput<E> {
     x: Vec<E>,
@@ -291,11 +299,23 @@ struct PolyFitInput<E> {
 }
 
 impl<E: Real + Scalar> CalibrationData<E> {
-    fn generate_fitting_data(&self, noise_equivalent_power: E, operation_frequency: E) -> PolyFitInput<E> {
+    fn generate_fitting_data(
+        &self,
+        noise_equivalent_power: E,
+        operation_frequency: E,
+    ) -> PolyFitInput<E> {
         PolyFitInput {
             x: self.concentration.clone(),
-            y: self.raw_measurements.iter().map(|measurement| measurement.scaled()).collect(),
-            w: self.raw_measurements.iter().map(|measurement| measurement.weight(noise_equivalent_power, operation_frequency)).collect(),
+            y: self
+                .raw_measurements
+                .iter()
+                .map(|measurement| measurement.scaled())
+                .collect(),
+            w: self
+                .raw_measurements
+                .iter()
+                .map(|measurement| measurement.weight(noise_equivalent_power, operation_frequency))
+                .collect(),
         }
     }
 }

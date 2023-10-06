@@ -21,9 +21,12 @@ fn create_calibration_dir(test_name: &str) -> Result<TempDir> {
 fn generate_gases<R: Rng>(num_gases: usize, rng: &mut R) -> Vec<Gas> {
     let mut gases = Vec::new();
     for _ in 0..num_gases {
-        let gas = Gas(
-            rng.sample_iter(Alphanumeric).take(3).map(char::from).collect::<String>().to_owned()
-        );
+        let gas = Gas(rng
+            .sample_iter(Alphanumeric)
+            .take(3)
+            .map(char::from)
+            .collect::<String>()
+            .to_owned());
         gases.push(gas);
     }
     gases
@@ -34,9 +37,14 @@ fn create_sensor_dir<R: Rng>(target_gas: &Gas, working_dir: &TempDir, rng: &mut 
     std::fs::create_dir(&sensor_dir).unwrap();
 
     // Write the generic information for the sensor
-    let sensor_data = SensorData { noise_equivalent_power: rng.gen::<f64>() };
-    std::fs::write(sensor_dir.join("sensor.toml"), toml::to_string(&sensor_data).unwrap())
-        .unwrap();
+    let sensor_data = SensorData {
+        noise_equivalent_power: rng.gen::<f64>(),
+    };
+    std::fs::write(
+        sensor_dir.join("sensor.toml"),
+        toml::to_string(&sensor_data).unwrap(),
+    )
+    .unwrap();
 
     // Generate the polynomials
 
@@ -58,7 +66,7 @@ fn generate_calibration_curves<R: Rng>(
     working_dir: &TempDir,
     rng: &mut R,
     polynomial_degree: usize,
-    num_samples: usize
+    num_samples: usize,
 ) -> Result<HashMap<Gas, Vec<f64>>> {
     let sensor_dir = working_dir.path().join("calibration").join(&target_gas.0);
     let mut coeffs_at_sensor = HashMap::new();
@@ -76,8 +84,15 @@ fn generate_calibration_curves<R: Rng>(
 
         // We fix the signals in both emergent channels and the reference signal to unity, here we
         // are just calculating the raw signal at the active channel given by the coeffs above
-        let raw_signal = concentrations.iter()
-            .map(|x| coeffs.iter().enumerate().map(|(ii, c)| c * x.powi(ii as i32)).fold(0., |a, b| a + b))
+        let raw_signal = concentrations
+            .iter()
+            .map(|x| {
+                coeffs
+                    .iter()
+                    .enumerate()
+                    .map(|(ii, c)| c * x.powi(ii as i32))
+                    .fold(0., |a, b| a + b)
+            })
             .map(|x| 10f64.powf(x)) // Fit signals are the base10 log of raw signals, so we invert
             // here to get the data into the expected format
             .collect::<Vec<_>>();
@@ -89,21 +104,19 @@ fn generate_calibration_curves<R: Rng>(
                 raw_signal: *v,
                 raw_reference: 1.0,
                 emergent_signal: 1.0,
-                emergent_reference: 1.0
+                emergent_reference: 1.0,
             };
             wtr.serialize(&row).unwrap();
         }
 
         coeffs_at_sensor.insert(gas.clone(), coeffs);
-
     }
 
     Ok(coeffs_at_sensor)
 }
 
-
 #[test]
-fn single_gas_sensor_fit_matches_input_coefficients() -> Result<()>{
+fn single_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
     let seed = 40;
     let mut rng = Isaac64Rng::seed_from_u64(seed);
 
@@ -118,17 +131,25 @@ fn single_gas_sensor_fit_matches_input_coefficients() -> Result<()>{
 
     for gas in gases.iter() {
         create_sensor_dir(&gas, &tmp_dir, &mut rng)?;
-        input_polynomial_coefficients.insert(gas, generate_calibration_curves(&gas, &gases, &tmp_dir, &mut rng, polynomial_degree, num_samples)?);
+        input_polynomial_coefficients.insert(
+            gas,
+            generate_calibration_curves(
+                &gas,
+                &gases,
+                &tmp_dir,
+                &mut rng,
+                polynomial_degree,
+                num_samples,
+            )?,
+        );
     }
-
-
 
     let config = Config {
         polynomial_fit_degree: polynomial_degree,
         operating_frequency: rng.gen::<u8>() as f64,
     };
 
-    let sensors  = marginal::calibration::build::<f64>(tmp_dir.into_path(), config)?;
+    let sensors = marginal::calibration::build::<f64>(tmp_dir.into_path(), config)?;
 
     assert_eq!(sensors.len(), 1);
 
@@ -136,25 +157,24 @@ fn single_gas_sensor_fit_matches_input_coefficients() -> Result<()>{
     let calculated_calibration = sensor.calibration();
     let calculated_coefficients = calculated_calibration.solution();
 
-    let expected_coefficients = input_polynomial_coefficients.get(&gases[0])
+    let expected_coefficients = input_polynomial_coefficients
+        .get(&gases[0])
         .expect("gas missing from map")
         .get(&gases[0])
         .expect("gas missing from map");
 
-
-    for (expected, calculated) in expected_coefficients.iter().zip(calculated_coefficients.iter()) {
-        approx::assert_relative_eq!(
-            expected,
-            calculated,
-            max_relative = 1e-4,
-        );
+    for (expected, calculated) in expected_coefficients
+        .iter()
+        .zip(calculated_coefficients.iter())
+    {
+        approx::assert_relative_eq!(expected, calculated, max_relative = 1e-4,);
     }
 
     Ok(())
 }
 
 #[test]
-fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()>{
+fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()> {
     let seed = 40;
     let mut rng = Isaac64Rng::seed_from_u64(seed);
 
@@ -170,54 +190,58 @@ fn multi_gas_sensor_fit_matches_input_coefficients() -> Result<()>{
 
     for gas in gases.iter() {
         create_sensor_dir(&gas, &tmp_dir, &mut rng)?;
-        input_polynomial_coefficients.insert(gas, generate_calibration_curves(&gas, &gases, &tmp_dir, &mut rng, polynomial_degree, num_samples)?);
+        input_polynomial_coefficients.insert(
+            gas,
+            generate_calibration_curves(
+                &gas,
+                &gases,
+                &tmp_dir,
+                &mut rng,
+                polynomial_degree,
+                num_samples,
+            )?,
+        );
     }
-
-
 
     let config = Config {
         polynomial_fit_degree: polynomial_degree,
         operating_frequency: rng.gen::<u8>() as f64,
     };
 
-    let sensors  = marginal::calibration::build::<f64>(tmp_dir.into_path(), config)?;
+    let sensors = marginal::calibration::build::<f64>(tmp_dir.into_path(), config)?;
 
     assert_eq!(sensors.len(), num_gases);
 
     for sensor in sensors.iter() {
         let target_gas = sensor.target();
-        let expected_coefficients_for_sensor = input_polynomial_coefficients.get(&target_gas)
+        let expected_coefficients_for_sensor = input_polynomial_coefficients
+            .get(&target_gas)
             .expect("target gas present in output but missing from input");
 
         // Check the calibration
         let calculated_calibration = sensor.calibration().solution();
-        let expected_calibration = expected_coefficients_for_sensor.get(&target_gas)
+        let expected_calibration = expected_coefficients_for_sensor
+            .get(&target_gas)
             .expect("sensor input missing calibration curve");
-        for (expected, calculated) in expected_calibration.iter().zip(calculated_calibration.iter()) {
-            approx::assert_relative_eq!(
-                expected,
-                calculated,
-                max_relative = 1e-4,
-            );
+        for (expected, calculated) in expected_calibration
+            .iter()
+            .zip(calculated_calibration.iter())
+        {
+            approx::assert_relative_eq!(expected, calculated, max_relative = 1e-4,);
         }
 
         // Check the crosstalk
         for (gas, crosstalk) in sensor.crosstalk() {
             let calculated_crosstalk = crosstalk.solution();
-            let expected_crosstalk = expected_coefficients_for_sensor.get(gas)
+            let expected_crosstalk = expected_coefficients_for_sensor
+                .get(gas)
                 .expect("sensor input missing crosstalk curve");
-            for (expected, calculated) in expected_crosstalk.iter().zip(calculated_crosstalk.iter()) {
-                approx::assert_relative_eq!(
-                    expected,
-                    calculated,
-                    max_relative = 1e-4,
-                );
+            for (expected, calculated) in expected_crosstalk.iter().zip(calculated_crosstalk.iter())
+            {
+                approx::assert_relative_eq!(expected, calculated, max_relative = 1e-4,);
             }
         }
-
-
     }
 
     Ok(())
 }
-

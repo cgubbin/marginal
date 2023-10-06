@@ -1,5 +1,4 @@
-use clap::{Command, Arg};
-
+use clap::{Arg, Command};
 
 pub(crate) fn app() -> Command {
     let mut command = Command::new("marginal")
@@ -17,5 +16,3 @@ pub(crate) fn app() -> Command {
 fn all_args_and_flags() -> Vec<Arg> {
     todo!()
 }
-
-

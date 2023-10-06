@@ -1,7 +1,7 @@
 use std::ops::MulAssign;
 
-use ndarray::{Array, Array2, Array1, s, ScalarOperand, Axis, Ix0};
-use ndarray_linalg::{LeastSquaresSvd, Inverse, Lapack, Scalar, LeastSquaresResult};
+use ndarray::{s, Array, Array1, Array2, Axis, Ix0, ScalarOperand};
+use ndarray_linalg::{Inverse, Lapack, LeastSquaresResult, LeastSquaresSvd, Scalar};
 
 use crate::Result;
 
@@ -37,7 +37,8 @@ pub fn polyfit<T: Scalar + Lapack + ScalarOperand + MulAssign + Copy>(
     let mut lhs: Array2<T> = vander.to_owned();
     let mut rhs: Array1<T> = Array::from_iter(y.into_iter().copied()).into_shape(x.len())?;
     if let Some(weights) = maybe_weights {
-        let weights: Array1<T> = Array::from_iter(weights.into_iter().copied()).into_shape(x.len())?;
+        let weights: Array1<T> =
+            Array::from_iter(weights.into_iter().copied()).into_shape(x.len())?;
         rhs = rhs * &weights;
 
         for (ii, weight) in weights.iter().enumerate() {
@@ -55,15 +56,17 @@ pub fn polyfit<T: Scalar + Lapack + ScalarOperand + MulAssign + Copy>(
     let result = lhs.least_squares(&rhs)?;
     let solution = (&result.solution.t() / &scaling).t().to_owned();
 
-
     let covariance = (lhs.t().dot(&lhs)).inv()?;
     let outer_prod_of_scaling = outer_product(&scaling, &scaling)?;
     let mut covariance = covariance / outer_prod_of_scaling;
     if covariance_scaling == Scaling::Scaled {
-        let factor = result.residual_sum_of_squares.as_ref().unwrap().mapv(|re| T::from_real(re) / T::from(x.len() - degree).unwrap());
+        let factor = result
+            .residual_sum_of_squares
+            .as_ref()
+            .unwrap()
+            .mapv(|re| T::from_real(re) / T::from(x.len() - degree).unwrap());
         covariance = covariance * factor;
     };
-
 
     Ok(PolyfitResult {
         solution,
@@ -74,21 +77,16 @@ pub fn polyfit<T: Scalar + Lapack + ScalarOperand + MulAssign + Copy>(
     })
 }
 
-fn outer_product<T: Scalar>(
-    a: &Array1<T>,
-    b: &Array1<T>,
-) -> Result<Array2<T>> {
+fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
     let a: Array2<T> = a.clone().into_shape((a.len(), 1))?;
     let b: Array2<T> = b.clone().into_shape((1, b.len()))?;
 
     Ok(ndarray::linalg::kron(&a, &b))
 }
 
-fn vandermonde<T: Scalar + Copy>(
-    x: &[T],
-    degree: usize,
-) -> Result<Array2<T>> {
-    let vals = x.iter()
+fn vandermonde<T: Scalar + Copy>(x: &[T], degree: usize) -> Result<Array2<T>> {
+    let vals = x
+        .iter()
         .map(|xi| (0..=degree).map(|i| xi.powi(i as i32)))
         .flatten();
 
@@ -97,16 +95,16 @@ fn vandermonde<T: Scalar + Copy>(
 
 #[cfg(test)]
 mod test {
+    use super::{outer_product, polyfit, vandermonde};
     use crate::polyfit::Scaling;
-    use super::{polyfit, vandermonde, outer_product};
 
     use itertools::Itertools;
     use ndarray_linalg::Determinant;
 
     use ndarray::Array;
-    use ndarray_rand::{rand::Rng, RandomExt};
     use ndarray_rand::rand::SeedableRng;
     use ndarray_rand::rand_distr::Uniform;
+    use ndarray_rand::{rand::Rng, RandomExt};
     use rand_isaac::isaac64::Isaac64Rng;
 
     #[test]
@@ -116,7 +114,9 @@ mod test {
         let num_data_points = 10;
         let degree = 5;
 
-        let data_points = (0..num_data_points).map(|_| rng.gen()).collect::<Vec<f64>>();
+        let data_points = (0..num_data_points)
+            .map(|_| rng.gen())
+            .collect::<Vec<f64>>();
 
         let vandermonde = vandermonde(&data_points, degree).unwrap();
 
@@ -139,7 +139,8 @@ mod test {
         let vandermonde = vandermonde(&data_points, dim - 1).unwrap();
         let determinant = vandermonde.det().unwrap();
 
-        let product_of_differences: f64 = data_points.iter()
+        let product_of_differences: f64 = data_points
+            .iter()
             .combinations(2)
             .map(|vals| vals[0] - vals[1])
             .product();
@@ -163,7 +164,6 @@ mod test {
                 approx::assert_relative_eq!(outer[[ii, jj]], a[ii] * b[jj]);
             }
         }
-
     }
 
     #[test]
@@ -174,12 +174,21 @@ mod test {
         let num_samples = rng.gen_range(10..255);
         let coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<f64>>();
         let x = (0..num_samples).map(|n| n as f64).collect::<Vec<_>>();
-        let y = x.iter().map(|x| coeffs.iter().enumerate().map(|(ii, ci)| ci * x.powi(ii as i32)).sum()).collect::<Vec<_>>();
+        let y = x
+            .iter()
+            .map(|x| {
+                coeffs
+                    .iter()
+                    .enumerate()
+                    .map(|(ii, ci)| ci * x.powi(ii as i32))
+                    .sum()
+            })
+            .collect::<Vec<_>>();
 
         let result = polyfit(&x, &y, degree, None, Scaling::Scaled).unwrap();
 
         for (coeff, fitted) in coeffs.into_iter().zip(result.solution.into_iter()) {
-            approx::assert_relative_eq!(coeff, fitted, max_relative=1e-10);
+            approx::assert_relative_eq!(coeff, fitted, max_relative = 1e-10);
         }
     }
 
@@ -191,13 +200,21 @@ mod test {
         let num_samples = rng.gen_range(10..255);
         let coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<f64>>();
         let x = (0..num_samples).map(|n| n as f64).collect::<Vec<_>>();
-        let y = x.iter().map(|x| coeffs.iter().enumerate().map(|(ii, ci)| ci * x.powi(ii as i32)).sum()).collect::<Vec<_>>();
+        let y = x
+            .iter()
+            .map(|x| {
+                coeffs
+                    .iter()
+                    .enumerate()
+                    .map(|(ii, ci)| ci * x.powi(ii as i32))
+                    .sum()
+            })
+            .collect::<Vec<_>>();
 
         let result = polyfit(&x, &y, degree, None, Scaling::Scaled).unwrap();
 
         for (coeff, fitted) in coeffs.into_iter().zip(result.solution.into_iter()) {
-            approx::assert_relative_eq!(coeff, fitted, max_relative=1e-10);
+            approx::assert_relative_eq!(coeff, fitted, max_relative = 1e-10);
         }
     }
 }
-

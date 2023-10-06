@@ -9,8 +9,7 @@ use crate::app;
 use crate::config;
 use crate::Result;
 
-
-pub struct Args (Arc<ArgsInner>);
+pub struct Args(Arc<ArgsInner>);
 
 pub struct ArgsInner {
     /// The command we want to execute
